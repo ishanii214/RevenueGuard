@@ -70,7 +70,15 @@ RevenueGuard/
 │   ├── payment_attempts.csv
 │   └── payment_failures.csv
 ├── scripts/
-│   └── generate_data.py
+│   ├── generate_data.py
+│   ├── features.py
+│   └── train_baseline.py
+├── models/
+│   └── baseline/
+│       ├── model.json
+│       ├── metrics.json
+│       ├── feature_importance.csv
+│       └── predictions_test.csv
 ├── agent/
 │   ├── __init__.py
 │   ├── graph.py
@@ -79,7 +87,9 @@ RevenueGuard/
 │   └── prompts.py
 └── tests/
     ├── test_data_quality.py
-    └── test_determinism.py
+    ├── test_determinism.py
+    ├── test_features.py
+    └── test_training.py
 ```
 
 ## Dataset Schema
@@ -119,13 +129,34 @@ Behavioral traits (e.g., per-customer payment reliability) are latent generation
 
 `recovery_outcome`, the attempt history, and the failure rows are the **label side** of the dataset. Later ML work must build features only from information available at prediction time (customer profile, transaction fields, and pre-outcome history). The schema deliberately avoids pre-computed behavior aggregates so target leakage cannot creep in through convenience columns.
 
+## Recovery Prediction Baseline (Phase 2)
+
+An XGBoost baseline predicts, at the moment a payment's initial attempt fails, whether the failed transaction will eventually recover (label: `recovery_outcome != "unrecovered"`).
+
+- **Prediction point:** the initial (attempt 1) failure timestamp. Features use only information available then: transaction fields, customer profile, the initial failure reason, and point-in-time customer history.
+- **Temporal availability rule:** a prior transaction contributes outcome information only if the outcome event (first failure / first success) happened before the current prediction point. A prior payment that recovered only after the prediction point counts as failed-but-not-recovered there. This is enforced in code and verified by tests.
+- **Split:** chronological by prediction time — 1,375 train / 294 validation / 296 test.
+- **Run:** `python scripts/train_baseline.py` (artifacts in `models/baseline/`).
+
+Headline test metrics (seed 42, no tuning beyond validation-based threshold and imbalance-variant choice):
+
+| Model | ROC-AUC | PR-AUC | Precision | Recall | F1 |
+|---|---|---|---|---|---|
+| XGBoost (threshold 0.25) | 0.6421 | 0.4717 | 0.4068 | 0.9469 | 0.5691 |
+| Majority baseline | 0.5000 | 0.3818 | 0.0000 | 0.0000 | 0.0000 |
+| Retryable-reason rule | 0.6041 | 0.4395 | 0.4491 | 0.8584 | 0.5897 |
+
+Business evaluation on the test split (synthetic assumption: 2.00 cost per intervention, not real economics): the model intervenes on 263 of 296 failed payments, captures 89.5% of recoverable value (43,850.13 of 48,969.69) with a 40.7% recovery rate among predicted positives.
+
+These are honest first-baseline numbers on synthetic data; improving discrimination is future work, not a claim of production readiness.
+
 ## Project Status
 
 RevenueGuard is being developed **incrementally**. Current progress:
 
 - [x] Project foundation and architecture documentation (Phase 0)
 - [x] Synthetic failed-payment dataset (Phase 1)
-- [ ] XGBoost recovery prediction model
+- [x] XGBoost recovery prediction baseline (Phase 2)
 - [ ] LangGraph investigation agent
 - [ ] Payment / customer investigation tools
 - [ ] Financial policy / guardrails

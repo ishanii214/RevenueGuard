@@ -1,4 +1,10 @@
 # RevenueGuard — Python dependencies
 #
-# No dependencies are pinned yet. Dependencies are added only when a
-# development phase actually requires them (see README — Project Status).
+# Dependencies are added only when a development phase actually requires
+# them (see README — Project Status).
+
+# Phase 2: XGBoost recovery baseline
+numpy==1.26.4
+pandas==2.3.3
+scikit-learn==1.8.0
+xgboost==3.2.0

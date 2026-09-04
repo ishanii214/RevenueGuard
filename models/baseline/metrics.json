@@ -1,0 +1,236 @@
+{
+  "baseline_majority_test_metrics": {
+    "confusion_matrix": {
+      "fn": 113,
+      "fp": 0,
+      "tn": 183,
+      "tp": 0
+    },
+    "f1": 0.0,
+    "n": 296,
+    "positives": 113,
+    "pr_auc": 0.38175675675675674,
+    "precision": 0.0,
+    "recall": 0.0,
+    "roc_auc": 0.5
+  },
+  "baseline_retry_rule_test_metrics": {
+    "confusion_matrix": {
+      "fn": 16,
+      "fp": 119,
+      "tn": 64,
+      "tp": 97
+    },
+    "f1": 0.5896656534954408,
+    "n": 296,
+    "positives": 113,
+    "pr_auc": 0.4395424185247194,
+    "precision": 0.44907407407407407,
+    "recall": 0.8584070796460177,
+    "roc_auc": 0.604066927801151
+  },
+  "best_iteration": 98,
+  "business_evaluation": {
+    "assumptions": {
+      "cost_per_intervention": 2.0,
+      "note": "Synthetic assumption for baseline comparison only, not real economics."
+    },
+    "intervene_on_all": {
+      "captured_recovered_value": 48969.69,
+      "interventions": 296,
+      "net_value": 48377.69,
+      "recovered_value_coverage": 1.0,
+      "recovery_rate_among_predicted_positives": 0.38175675675675674,
+      "total_recoverable_value": 48969.69,
+      "true_positives": 113
+    },
+    "intervene_on_none": {
+      "captured_recovered_value": 0.0,
+      "interventions": 0,
+      "net_value": 0.0,
+      "recovered_value_coverage": 0.0,
+      "recovery_rate_among_predicted_positives": 0.0,
+      "total_recoverable_value": 48969.69,
+      "true_positives": 0
+    },
+    "model_at_tuned_threshold": {
+      "captured_recovered_value": 43850.13,
+      "interventions": 263,
+      "net_value": 43324.13,
+      "recovered_value_coverage": 0.8954545148233527,
+      "recovery_rate_among_predicted_positives": 0.4068441064638783,
+      "total_recoverable_value": 48969.69,
+      "true_positives": 107
+    }
+  },
+  "config": {
+    "colsample_bytree": 0.9,
+    "early_stopping_rounds": 40,
+    "eval_metric": "auc",
+    "learning_rate": 0.05,
+    "max_depth": 4,
+    "min_child_weight": 5,
+    "n_estimators": 400,
+    "objective": "binary:logistic",
+    "reg_lambda": 1.0,
+    "subsample": 0.9,
+    "tree_method": "hist"
+  },
+  "dataset": {
+    "failed_transactions": 1965,
+    "positives": 702
+  },
+  "feature_importance_top15": [
+    {
+      "cover": 336.54608154296875,
+      "feature": "failure_reason_temporary_network_error",
+      "gain": 12.430682182312012,
+      "weight": 34
+    },
+    {
+      "cover": 335.9763488769531,
+      "feature": "failure_reason_expired_card",
+      "gain": 12.065332412719727,
+      "weight": 36
+    },
+    {
+      "cover": 314.7951354980469,
+      "feature": "failure_reason_invalid_payment_method",
+      "gain": 11.749832153320312,
+      "weight": 30
+    },
+    {
+      "cover": 301.23052978515625,
+      "feature": "failure_reason_risk_review_hold",
+      "gain": 8.669217109680176,
+      "weight": 26
+    },
+    {
+      "cover": 135.43019104003906,
+      "feature": "failure_reason_payment_method_limit_exceeded",
+      "gain": 7.451094627380371,
+      "weight": 4
+    },
+    {
+      "cover": 260.6979064941406,
+      "feature": "failure_reason_bank_unavailable",
+      "gain": 6.549933433532715,
+      "weight": 19
+    },
+    {
+      "cover": 181.60655212402344,
+      "feature": "preferred_payment_method_bank_transfer",
+      "gain": 6.477950096130371,
+      "weight": 2
+    },
+    {
+      "cover": 169.63201904296875,
+      "feature": "prior_recovery_rate",
+      "gain": 5.750174522399902,
+      "weight": 80
+    },
+    {
+      "cover": 143.2788543701172,
+      "feature": "method_mismatch",
+      "gain": 5.736302375793457,
+      "weight": 10
+    },
+    {
+      "cover": 96.9400863647461,
+      "feature": "failure_reason_insufficient_funds",
+      "gain": 5.653959274291992,
+      "weight": 21
+    },
+    {
+      "cover": 122.5866928100586,
+      "feature": "prior_failed_count",
+      "gain": 5.05849552154541,
+      "weight": 6
+    },
+    {
+      "cover": 27.41879653930664,
+      "feature": "customer_segment_smb",
+      "gain": 4.891282558441162,
+      "weight": 8
+    },
+    {
+      "cover": 54.864837646484375,
+      "feature": "country_IN",
+      "gain": 4.872478008270264,
+      "weight": 10
+    },
+    {
+      "cover": 111.2965087890625,
+      "feature": "country_GB",
+      "gain": 4.74314022064209,
+      "weight": 10
+    },
+    {
+      "cover": 127.4837417602539,
+      "feature": "customer_tenure_days",
+      "gain": 4.6637492179870605,
+      "weight": 226
+    }
+  ],
+  "label_positive_rate": {
+    "test": 0.3818,
+    "train": 0.3498,
+    "validation": 0.3673
+  },
+  "model_test_metrics_default_threshold": {
+    "confusion_matrix": {
+      "fn": 38,
+      "fp": 78,
+      "tn": 105,
+      "tp": 75
+    },
+    "f1": 0.5639097744360902,
+    "n": 296,
+    "positives": 113,
+    "pr_auc": 0.47165553574517827,
+    "precision": 0.49019607843137253,
+    "recall": 0.6637168141592921,
+    "roc_auc": 0.642149040088979
+  },
+  "model_test_metrics_tuned_threshold": {
+    "confusion_matrix": {
+      "fn": 6,
+      "fp": 156,
+      "tn": 27,
+      "tp": 107
+    },
+    "f1": 0.5691489361702128,
+    "n": 296,
+    "positives": 113,
+    "pr_auc": 0.47165553574517827,
+    "precision": 0.4068441064638783,
+    "recall": 0.9469026548672567,
+    "roc_auc": 0.642149040088979
+  },
+  "scale_pos_weight_value": 1.8586,
+  "seed": 42,
+  "selected_variant": "scale_pos_weight",
+  "split": {
+    "max_train_prediction_time": "2023-03-02T06:41:00",
+    "max_validation_prediction_time": "2023-12-31T14:01:00",
+    "min_test_prediction_time": "2025-06-16T18:58:00",
+    "min_validation_prediction_time": "2023-12-31T14:01:00",
+    "rule": "chronological by prediction_time (70/15/15), ties by transaction_id",
+    "test": 296,
+    "train": 1375,
+    "validation": 294
+  },
+  "tuned_threshold": 0.25,
+  "tuned_threshold_validation_f1": 0.5522788203753352,
+  "variant_validation_pr_auc": {
+    "base": 0.48696369697159686,
+    "scale_pos_weight": 0.4873235499628183
+  },
+  "versions": {
+    "numpy": "1.26.4",
+    "pandas": "2.3.3",
+    "python": "3.11.0",
+    "scikit-learn": "1.8.0",
+    "xgboost": "3.2.0"
+  }
+}
