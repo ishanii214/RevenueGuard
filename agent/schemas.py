@@ -176,6 +176,7 @@ class InvestigationResult(BaseModel):
     recommendation: Recommendation
     errors: list[str]
     llm_review: "LLMReview | None" = None
+    policy_evaluation: "PolicyEvaluation | None" = None
 
 
 class NarrativeKeyFinding(BaseModel):
@@ -205,6 +206,71 @@ class LLMReview(BaseModel):
     deterministic_recommendation: RecommendationAction
     llm_recommendation: RecommendationAction
     agrees_with_deterministic: bool
+
+
+PolicyDecision = Literal["ALLOWED", "DENIED"]
+
+PolicyReasonCode = Literal[
+    "retry_allowed_within_policy",
+    "review_is_safe_path",
+    "ignore_requires_no_authorization",
+    "auto_retry_disabled",
+    "missing_required_evidence",
+    "inconsistent_evidence",
+    "non_retryable_failure_reason",
+    "risk_review_hold_requires_human_review",
+    "high_value_auto_retry_prohibited",
+    "retry_cap_exceeded",
+    "retry_probability_below_policy_floor",
+    "invalid_requested_action",
+]
+
+
+class PolicyConfig(BaseModel):
+    """Versioned policy configuration; snapshotted into every decision."""
+
+    policy_version: str
+    auto_retry_enabled: bool = True
+    max_total_attempts: int = Field(default=4, ge=1)
+    retry_probability_floor: float = Field(default=0.30, ge=0.0, le=1.0)
+    high_value_threshold: float = Field(default=5000.00, ge=0.0)
+
+
+class PolicyRequest(BaseModel):
+    """Deterministic projection of the investigated case.
+
+    ``known_attempt_count`` counts only attempts known at the case prediction
+    timestamp (Phase 2/3 temporal rule); future retries are never counted.
+    ``consistency_violations`` carries C1/C2/C3 check results (see policy.py).
+    """
+
+    requested_action: RecommendationAction
+    recovery_probability: float | None = None
+    failure_reason: str | None = None
+    known_attempt_count: int | None = Field(default=None, ge=0)
+    amount: float | None = None
+    prior_failed_count: int | None = None
+    prior_recovered_count: int | None = None
+    required_evidence_present: bool = False
+    present_evidence_sources: list[str] = Field(default_factory=list)
+    consistency_violations: list[str] = Field(default_factory=list)
+
+
+class PolicyEvaluation(BaseModel):
+    """Authoritative policy decision. ``policy_decision="ALLOWED"`` does NOT
+    by itself authorize a financial action: ``execution_authorized`` is the
+    gate and is True only for requested_action=RETRY + policy_decision=ALLOWED."""
+
+    requested_action: RecommendationAction
+    policy_decision: PolicyDecision
+    final_action: Literal["RETRY", "REVIEW", "IGNORE"]
+    reason_codes: list[PolicyReasonCode]
+    explanation: str
+    applicable_guardrails: list[str]
+    policy_version: str
+    config_snapshot: PolicyConfig
+    execution_authorized: bool
+    evaluated_at: datetime
 
 
 InvestigationResult.model_rebuild()

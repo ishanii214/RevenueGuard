@@ -98,7 +98,12 @@ class InvestigationGraphTests(unittest.TestCase):
             self.assertEqual(set(result.model_dump().keys()), expected_keys)
             serialized = result.model_dump_json()
             self.assertNotIn("executed", serialized.lower())
-            self.assertNotIn("authoriz", serialized.lower())
+            # The Phase 5 policy gate (`execution_authorized`) expresses
+            # authorization semantics only; the investigation itself never
+            # executes anything and no past-tense execution fields exist.
+            parsed = json.loads(serialized)
+            self.assertNotIn("executed", json.dumps(list(parsed.keys())).lower())
+            self.assertNotIn("payment_status", serialized.lower())
 
     def test_leakage_no_future_data_in_evidence(self):
         import pandas as pd

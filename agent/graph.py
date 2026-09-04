@@ -35,6 +35,7 @@ from agent.narration import (  # noqa: E402
     check_grounding,
     parse_narrative,
 )
+from agent.policy import DEFAULT_POLICY_CONFIG, build_policy_request, evaluate_policy  # noqa: E402
 from agent.prediction import get_recovery_prediction  # noqa: E402
 from agent.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE  # noqa: E402
 from agent.schemas import (  # noqa: E402
@@ -344,6 +345,17 @@ def _recommend(state: InvestigationState) -> dict:
     return {"result": result}
 
 
+def _evaluate_policy(state: InvestigationState) -> dict:
+    """Phase 5: deterministic, authoritative policy evaluation of the
+    deterministic recommendation. Reads only deterministic evidence and the
+    recommendation — never ``llm_review``. ``evaluated_at`` is the case
+    prediction point, keeping the layer wall-clock free."""
+    result = state["result"]
+    request = build_policy_request(state)
+    evaluation = evaluate_policy(request, DEFAULT_POLICY_CONFIG, evaluated_at=_as_of(state))
+    return {"result": result.model_copy(update={"policy_evaluation": evaluation})}
+
+
 def build_graph(llm_client=None):
     graph = StateGraph(InvestigationState)
     graph.add_node("load_case", _load_case)
@@ -352,13 +364,15 @@ def build_graph(llm_client=None):
     graph.add_node("llm_reason", _make_llm_reason(llm_client))
     graph.add_node("validate_llm_output", _validate_llm_output)
     graph.add_node("recommend", _recommend)
+    graph.add_node("evaluate_policy", _evaluate_policy)
     graph.add_edge(START, "load_case")
     graph.add_edge("load_case", "gather_evidence")
     graph.add_edge("gather_evidence", "analyze")
     graph.add_edge("analyze", "llm_reason")
     graph.add_edge("llm_reason", "validate_llm_output")
     graph.add_edge("validate_llm_output", "recommend")
-    graph.add_edge("recommend", END)
+    graph.add_edge("recommend", "evaluate_policy")
+    graph.add_edge("evaluate_policy", END)
     return graph.compile()
 
 

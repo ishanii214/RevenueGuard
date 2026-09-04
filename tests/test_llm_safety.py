@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 import generate_data as gd  # noqa: E402
 from agent.graph import (  # noqa: E402
     _analyze,
+    _evaluate_policy,
     _gather_evidence,
     _load_case,
     _recommend,
@@ -268,28 +269,32 @@ class LLMSafetyTests(unittest.TestCase):
         self.assertEqual(result.recommendation.action, baseline.recommendation.action)
 
     def test_no_llm_path_equivalent_to_phase3_graph(self):
-        """The no-LLM run must match the Phase 3 graph exactly (the LLM nodes
-        reduce to a single recorded error note)."""
+        """The no-LLM run must match the deterministic graph without the LLM
+        nodes exactly (the LLM nodes reduce to a single recorded error note).
+        The Phase 5 policy node is part of the deterministic pipeline and is
+        included in both paths."""
         for transaction_id in self.case_ids[:3]:
             investigation_input = InvestigationInput(
                 transaction_id=transaction_id, data_dir=str(self.data_dir), model_path=self.model_path
             )
-            phase3_graph = StateGraph(InvestigationState)
-            phase3_graph.add_node("load_case", _load_case)
-            phase3_graph.add_node("gather_evidence", _gather_evidence)
-            phase3_graph.add_node("analyze", _analyze)
-            phase3_graph.add_node("recommend", _recommend)
-            phase3_graph.add_edge(START, "load_case")
-            phase3_graph.add_edge("load_case", "gather_evidence")
-            phase3_graph.add_edge("gather_evidence", "analyze")
-            phase3_graph.add_edge("analyze", "recommend")
-            phase3_graph.add_edge("recommend", END)
-            phase3_result = phase3_graph.compile().invoke(initial_state(investigation_input))["result"]
-            phase4_result = investigate(investigation_input, llm_client=DisabledLLM())
-            self.assertIsNone(phase3_result.llm_review)
-            self.assertIsNone(phase4_result.llm_review)
-            base = phase4_result.model_dump()
-            reference = phase3_result.model_dump()
+            deterministic_graph = StateGraph(InvestigationState)
+            deterministic_graph.add_node("load_case", _load_case)
+            deterministic_graph.add_node("gather_evidence", _gather_evidence)
+            deterministic_graph.add_node("analyze", _analyze)
+            deterministic_graph.add_node("recommend", _recommend)
+            deterministic_graph.add_node("evaluate_policy", _evaluate_policy)
+            deterministic_graph.add_edge(START, "load_case")
+            deterministic_graph.add_edge("load_case", "gather_evidence")
+            deterministic_graph.add_edge("gather_evidence", "analyze")
+            deterministic_graph.add_edge("analyze", "recommend")
+            deterministic_graph.add_edge("recommend", "evaluate_policy")
+            deterministic_graph.add_edge("evaluate_policy", END)
+            deterministic_result = deterministic_graph.compile().invoke(initial_state(investigation_input))["result"]
+            full_result = investigate(investigation_input, llm_client=DisabledLLM())
+            self.assertIsNone(deterministic_result.llm_review)
+            self.assertIsNone(full_result.llm_review)
+            base = full_result.model_dump()
+            reference = deterministic_result.model_dump()
             narration_note = base["errors"][-1] if base["errors"] else None
             self.assertIn("llm narration unavailable", narration_note or "")
             base["errors"] = base["errors"][:-1]
