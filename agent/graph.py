@@ -54,7 +54,7 @@ _EPOCH = datetime(1970, 1, 1)
 _GRAPH = None
 
 
-def _as_of(state: InvestigationState) -> datetime:
+def _as_of(state: InvestigationState, repository_factory=get_repository) -> datetime:
     """The prediction point: the initial failure timestamp when known.
 
     Falls back to transaction creation time, then to a fixed epoch sentinel —
@@ -63,7 +63,7 @@ def _as_of(state: InvestigationState) -> datetime:
     prediction = state.get("prediction")
     if prediction is not None:
         return prediction.prediction_time
-    repo = get_repository(state["investigation_input"].data_dir)
+    repo = repository_factory(state["investigation_input"].data_dir)
     attempt = repo.get_initial_attempt(state["investigation_input"].transaction_id)
     if attempt is not None:
         return attempt.attempted_at
@@ -73,7 +73,7 @@ def _as_of(state: InvestigationState) -> datetime:
     return _EPOCH
 
 
-def _load_case(state: InvestigationState) -> dict:
+def _load_case(state: InvestigationState, repository_factory=get_repository) -> dict:
     investigation_input = state["investigation_input"]
     errors = list(state.get("errors", []))
     prediction = investigation_input.prediction
@@ -85,21 +85,21 @@ def _load_case(state: InvestigationState) -> dict:
         )
         if prediction is None:
             errors.append(f"recovery prediction unavailable for {investigation_input.transaction_id}")
-    repo = get_repository(investigation_input.data_dir)
+    repo = repository_factory(investigation_input.data_dir)
     if repo.get_transaction(investigation_input.transaction_id) is None:
         errors.append(f"transaction {investigation_input.transaction_id} not found")
     return {"prediction": prediction, "errors": errors}
 
 
-def _gather_evidence(state: InvestigationState) -> dict:
+def _gather_evidence(state: InvestigationState, repository_factory=get_repository) -> dict:
     investigation_input = state["investigation_input"]
-    repo = get_repository(investigation_input.data_dir)
+    repo = repository_factory(investigation_input.data_dir)
     details = repo.get_transaction(investigation_input.transaction_id)
     evidence = build_evidence(
         repo,
         investigation_input.transaction_id,
         details.customer_id if details else None,
-        _as_of(state),
+        _as_of(state, repository_factory),
         state.get("prediction"),
     )
     return {"evidence": evidence}
@@ -345,26 +345,37 @@ def _recommend(state: InvestigationState) -> dict:
     return {"result": result}
 
 
-def _evaluate_policy(state: InvestigationState) -> dict:
+def _evaluate_policy(state: InvestigationState, repository_factory=get_repository) -> dict:
     """Phase 5: deterministic, authoritative policy evaluation of the
     deterministic recommendation. Reads only deterministic evidence and the
     recommendation — never ``llm_review``. ``evaluated_at`` is the case
     prediction point, keeping the layer wall-clock free."""
     result = state["result"]
     request = build_policy_request(state)
-    evaluation = evaluate_policy(request, DEFAULT_POLICY_CONFIG, evaluated_at=_as_of(state))
+    evaluation = evaluate_policy(request, DEFAULT_POLICY_CONFIG, evaluated_at=_as_of(state, repository_factory))
     return {"result": result.model_copy(update={"policy_evaluation": evaluation})}
 
 
-def build_graph(llm_client=None):
+def build_graph(llm_client=None, repository_factory=None):
+    factory = repository_factory if repository_factory is not None else get_repository
+
+    def load_case_node(state: InvestigationState) -> dict:
+        return _load_case(state, factory)
+
+    def gather_evidence_node(state: InvestigationState) -> dict:
+        return _gather_evidence(state, factory)
+
+    def evaluate_policy_node(state: InvestigationState) -> dict:
+        return _evaluate_policy(state, factory)
+
     graph = StateGraph(InvestigationState)
-    graph.add_node("load_case", _load_case)
-    graph.add_node("gather_evidence", _gather_evidence)
+    graph.add_node("load_case", load_case_node)
+    graph.add_node("gather_evidence", gather_evidence_node)
     graph.add_node("analyze", _analyze)
     graph.add_node("llm_reason", _make_llm_reason(llm_client))
     graph.add_node("validate_llm_output", _validate_llm_output)
     graph.add_node("recommend", _recommend)
-    graph.add_node("evaluate_policy", _evaluate_policy)
+    graph.add_node("evaluate_policy", evaluate_policy_node)
     graph.add_edge(START, "load_case")
     graph.add_edge("load_case", "gather_evidence")
     graph.add_edge("gather_evidence", "analyze")
@@ -376,16 +387,19 @@ def build_graph(llm_client=None):
     return graph.compile()
 
 
-def investigate(investigation_input: InvestigationInput, llm_client=None) -> InvestigationResult:
+def investigate(
+    investigation_input: InvestigationInput, llm_client=None, repository_factory=None
+) -> InvestigationResult:
     """Run one investigation. ``llm_client=None`` resolves the client from the
     environment (DisabledLLM when unconfigured — the deterministic default);
-    pass an explicit client (or DisabledLLM()) to control narration."""
+    ``repository_factory=None`` uses the CSV-backed repository (Phase 6 DB
+    mode passes a factory returning the PostgreSQL-backed repository)."""
     global _GRAPH
-    if llm_client is None:
+    if llm_client is None and repository_factory is None:
         if _GRAPH is None:
-            _GRAPH = build_graph(None)
+            _GRAPH = build_graph(None, None)
         graph = _GRAPH
     else:
-        graph = build_graph(llm_client)
+        graph = build_graph(llm_client, repository_factory)
     final_state = graph.invoke(initial_state(investigation_input))
     return final_state["result"]

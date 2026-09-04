@@ -12,3 +12,12 @@ xgboost==3.2.0
 # Phase 3: LangGraph investigation agent (fully deterministic; no LLM)
 langgraph==1.1.3
 pydantic==2.13.4
+
+# Phase 4: advisory LLM narration — intentionally zero new dependencies
+# (OpenAI-compatible endpoints via the standard library; see agent/llm.py)
+
+# Phase 6: PostgreSQL persistence + FastAPI service layer
+psycopg[binary]==3.2.3
+fastapi==0.111.0
+uvicorn==0.29.0
+httpx==0.27.0

@@ -24,10 +24,21 @@ _MODEL_CACHE: dict[str, xgb.Booster] = {}
 _FEATURES_CACHE: dict[str, tuple] = {}
 
 
-def _get_features(data_dir: str):
-    key = str(Path(data_dir).resolve())
+def _features_cache_key(data_dir: str | None, frames) -> str:
+    if frames is not None:
+        # DB-mode frames are cached by the backend loader, so the object
+        # identity is stable for the lifetime of the cached frames.
+        return f"frames:{id(frames)}"
+    return f"csv:{Path(data_dir or 'data').resolve()}"
+
+
+def _get_features(data_dir: str | None = None, frames=None):
+    key = _features_cache_key(data_dir, frames)
     if key not in _FEATURES_CACHE:
-        _FEATURES_CACHE[key] = features.build_features(data_dir)
+        if frames is not None:
+            _FEATURES_CACHE[key] = features.build_features_from_frames(frames)
+        else:
+            _FEATURES_CACHE[key] = features.build_features(data_dir or "data")
     return _FEATURES_CACHE[key]
 
 
@@ -44,14 +55,19 @@ def _get_booster(model_path: str) -> xgb.Booster | None:
 
 
 def get_recovery_prediction(
-    transaction_id: str, data_dir: str = "data", model_path: str = "models/baseline/model.json"
+    transaction_id: str,
+    data_dir: str = "data",
+    model_path: str = "models/baseline/model.json",
+    frames=None,
 ) -> RecoveryPrediction | None:
     """Return the baseline recovery probability for a failed transaction.
 
-    Returns None when the transaction is not a failed transaction (or does
-    not exist) or when the model artifact is unavailable.
+    ``frames`` optionally supplies pre-loaded (customers, transactions,
+    attempts, failures) frames (Phase 6 DB mode); otherwise the CSV data_dir
+    is used. Returns None when the transaction is not a failed transaction
+    (or does not exist) or when the model artifact is unavailable.
     """
-    X, _y, meta = _get_features(data_dir)
+    X, _y, meta = _get_features(data_dir, frames)
     matches = meta.index[meta["transaction_id"] == transaction_id]
     if len(matches) == 0:
         return None

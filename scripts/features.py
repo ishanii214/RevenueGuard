@@ -177,7 +177,14 @@ def build_features(data_dir):
     recovery label for failed transactions, and meta carries identifiers,
     business fields and the chronological split assignment.
     """
-    customers, transactions, attempts, failures = load_tables(data_dir)
+    return build_features_from_frames(load_tables(data_dir))
+
+
+def build_features_from_frames(frames):
+    """Build features from pre-loaded (customers, transactions, attempts,
+    failures) pandas frames. Phase 6: lets the DB-mode backend feed
+    PostgreSQL-loaded frames into the identical Phase 2 feature logic."""
+    customers, transactions, attempts, failures = frames
 
     initial = attempts.loc[attempts["attempt_number"] == "1"].set_index("transaction_id")
     initial_failure = failures.loc[

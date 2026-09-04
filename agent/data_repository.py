@@ -15,6 +15,7 @@ timestamp of the investigated transaction). Structural safeguards:
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Protocol
 
 import pandas as pd
 
@@ -37,6 +38,36 @@ from agent.schemas import (  # noqa: E402
 _REPO_CACHE: dict[str, "CaseRepository"] = {}
 
 
+class CaseRepositoryProtocol(Protocol):
+    """The data-access surface the investigation depends on (Phase 6).
+
+    Agent tools and graph nodes depend on this abstraction, never on CSV
+    files or SQL. Implementations: ``CaseRepository`` (CSV, default) and the
+    Phase 6 backend's PostgreSQL-backed repository (built via
+    ``CaseRepository.from_frames`` over DB-loaded frames, so the temporal
+    as-of semantics live in exactly one place).
+    """
+
+    @property
+    def failed_transaction_ids(self) -> list[str]: ...
+
+    def get_transaction(self, transaction_id: str) -> TransactionDetails | None: ...
+
+    def get_customer(self, customer_id: str) -> CustomerProfile | None: ...
+
+    def get_initial_attempt(self, transaction_id: str) -> AttemptRecord | None: ...
+
+    def get_initial_failure(self, transaction_id: str) -> FailureRecord | None: ...
+
+    def get_customer_history(
+        self, customer_id: str, as_of: datetime, exclude_transaction_id: str | None = None
+    ) -> CustomerHistory: ...
+
+    def get_recovery_history(
+        self, customer_id: str, as_of: datetime, exclude_transaction_id: str | None = None
+    ) -> RecoveryHistory: ...
+
+
 def get_repository(data_dir: str) -> "CaseRepository":
     key = str(Path(data_dir).resolve())
     if key not in _REPO_CACHE:
@@ -45,8 +76,10 @@ def get_repository(data_dir: str) -> "CaseRepository":
 
 
 class CaseRepository:
-    def __init__(self, data_dir):
-        self.customers, self.transactions, self.attempts, self.failures = load_tables(data_dir)
+    def __init__(self, data_dir: str | None = None, frames: tuple | None = None):
+        if frames is None:
+            frames = load_tables(data_dir or "data")
+        self.customers, self.transactions, self.attempts, self.failures = frames
 
         self._transactions_by_id = self.transactions.set_index("transaction_id", drop=False)
         self._customers_by_id = self.customers.set_index("customer_id", drop=False)
@@ -71,6 +104,13 @@ class CaseRepository:
             customer_id: frame.sort_values("created_at", kind="mergesort")
             for customer_id, frame in txn.groupby("customer_id")
         }
+
+    @classmethod
+    def from_frames(cls, frames: tuple) -> "CaseRepository":
+        """Build a repository from pre-loaded (customers, transactions,
+        attempts, failures) pandas frames — Phase 6 DB mode feeds
+        PostgreSQL-loaded frames into the identical as-of logic."""
+        return cls(frames=frames)
 
     @property
     def failed_transaction_ids(self) -> list[str]:

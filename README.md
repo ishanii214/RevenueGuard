@@ -73,7 +73,8 @@ RevenueGuard/
 │   ├── generate_data.py
 │   ├── features.py
 │   ├── train_baseline.py
-│   └── run_investigation.py
+│   ├── run_investigation.py
+│   └── seed_database.py
 ├── models/
 │   └── baseline/
 │       ├── model.json
@@ -91,6 +92,12 @@ RevenueGuard/
 │   ├── llm.py
 │   ├── narration.py
 │   └── prompts.py
+├── backend/
+│   ├── schema.sql
+│   ├── db.py
+│   ├── repository.py
+│   ├── service.py
+│   └── app.py
 └── tests/
     ├── test_data_quality.py
     ├── test_determinism.py
@@ -99,7 +106,9 @@ RevenueGuard/
     ├── test_agent_tools.py
     ├── test_agent_graph.py
     ├── test_llm_safety.py
-    └── test_llm_live.py
+    ├── test_llm_live.py
+    ├── test_backend_unit.py
+    └── test_db_api.py
 ```
 
 ## Dataset Schema
@@ -187,6 +196,19 @@ An **optional, advisory** LLM step explains the deterministic investigation. The
 - **Configuration (provider-neutral, zero new dependencies):** any OpenAI-compatible endpoint via `LLM_BASE_URL`, `LLM_MODEL`, optional `LLM_API_KEY`, `LLM_TIMEOUT_S` (see `.env.example`). Local-first recommendation: Ollama (`http://localhost:11434/v1`, e.g. `llama3.1:8b-instruct`) or LM Studio/llama.cpp; cloud providers work by pointing `LLM_BASE_URL` at them. Leave unset to run fully deterministically without an LLM. API keys are never logged.
 - **Usage:** default auto (`python scripts/run_investigation.py ...` uses env config when present); `--no-llm` forces the deterministic path. Unit tests use a scripted fake LLM; a live-model smoke test exists but is skipped unless `LLM_BASE_URL`/`LLM_MODEL` are set.
 
+## Persistence & API (Phase 6)
+
+RevenueGuard now persists cases and investigation snapshots to **PostgreSQL** and exposes a minimal **FastAPI** service. The investigation pipeline is unchanged — in DB mode it consumes PostgreSQL-loaded frames through the same Phase 2/3 feature and as-of code, so temporal semantics live in exactly one place.
+
+- **Setup:** any PostgreSQL 14+ instance; set `DATABASE_URL` (see `.env.example`), then seed deterministically from the committed CSVs: `python scripts/seed_database.py` (idempotent; verifies row counts).
+- **Run:** `uvicorn backend.app:app --reload` (defaults to CSV investigation mode; DB mode per request).
+- **Bounded loading (D1):** DB frames are loaded **once per dataset state** behind a fingerprint cache (row count + max timestamp per table); repeated investigations do not re-query the tables (query-count tested). Case list/detail/result reads use single-row or `LIMIT/OFFSET` SQL.
+- **Endpoints:** `GET /health` · `GET /cases?limit&offset` · `GET /cases/{id}` · `POST /cases/{id}/investigation` (`{"use_llm": false, "use_database": false}`) · `GET /cases/{id}/investigation`. Unknown IDs → 404; malformed queries → 422; DB unavailable → 503. There are deliberately no execution endpoints.
+- **Snapshot model (D4):** `investigation_results` is a **current-result snapshot per transaction (upserted)** — not a historical audit log. Every snapshot retains the deterministic recommendation, policy decision, `final_action`, `execution_authorized`, `policy_version`, the full result payload (including policy evaluation and advisory LLM review), `prediction_time`, and `investigated_at`.
+- **Timestamps:** `prediction_time` is the temporal cutoff used by features, evidence, and policy (Phase 1–5 semantics, unchanged); `investigated_at` is operational wall-clock metadata stamped after the graph returns and never fed back into any logic (proven by tests).
+- **Safety:** case payloads are allowlisted projections — `recovery_outcome` is never served by the API; the LLM remains advisory-only; policy remains deterministic, authoritative, and fail-closed; `execution_authorized` semantics are unchanged; no payment execution exists.
+- **Tests:** the PostgreSQL integration suite is gated on `REVENUEGUARD_TEST_DATABASE_URL` (point it at a disposable database); the un-gated suite still covers response-model allowlists, route surface, validation, service boundaries, and safety invariants.
+
 ## Project Status
 
 RevenueGuard is being developed **incrementally**. Current progress:
@@ -197,12 +219,12 @@ RevenueGuard is being developed **incrementally**. Current progress:
 - [x] LangGraph investigation agent, deterministic (Phase 3)
 - [x] Payment / customer investigation tools, deterministic (Phase 3)
 - [x] LLM evidence narration, advisory and optional (Phase 4)
-- [ ] Financial policy / guardrails
+- [x] Financial policy / guardrails, deterministic and authoritative (Phase 5)
 - [ ] Simulated recovery and business metrics
 - [ ] LangSmith tracing and evaluation
-- [ ] PostgreSQL persistence
-- [ ] FastAPI backend
+- [x] PostgreSQL persistence (Phase 6)
+- [x] FastAPI backend (Phase 6)
 - [ ] React + TypeScript analyst dashboard
 - [ ] MCP tool interface
 
-All unchecked components are **planned and not yet implemented**. The dataset and its generator are complete tooling; no application functionality exists yet.
+All unchecked components are **planned and not yet implemented**. The application components built so far (dataset, prediction, investigation, advisory narration, policy, persistence, API) are complete tooling and backend services; no financial execution capability exists.
