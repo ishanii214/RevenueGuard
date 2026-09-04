@@ -175,3 +175,36 @@ class InvestigationResult(BaseModel):
     risk_flags: list[str]
     recommendation: Recommendation
     errors: list[str]
+    llm_review: "LLMReview | None" = None
+
+
+class NarrativeKeyFinding(BaseModel):
+    statement: str
+    evidence_references: list[str] = Field(default_factory=list)
+
+
+class InvestigationNarrative(BaseModel):
+    """Typed LLM narration output. Advisory only: the deterministic Phase 3
+    recommendation remains authoritative, and this schema deliberately has no
+    fields capable of expressing execution or authorization."""
+
+    summary: str
+    key_findings: list[NarrativeKeyFinding]
+    supporting_evidence: list[str] = Field(default_factory=list)
+    uncertainty: str
+    prediction_interpretation: str
+    recommended_action: RecommendationAction
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_references: list[str] = Field(default_factory=list)
+
+
+class LLMReview(BaseModel):
+    narrative: InvestigationNarrative
+    validation: dict
+    advisory_only: Literal[True] = True
+    deterministic_recommendation: RecommendationAction
+    llm_recommendation: RecommendationAction
+    agrees_with_deterministic: bool
+
+
+InvestigationResult.model_rebuild()

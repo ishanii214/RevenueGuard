@@ -88,6 +88,8 @@ RevenueGuard/
 │   ├── state.py
 │   ├── tools.py
 │   ├── graph.py
+│   ├── llm.py
+│   ├── narration.py
 │   └── prompts.py
 └── tests/
     ├── test_data_quality.py
@@ -95,7 +97,9 @@ RevenueGuard/
     ├── test_features.py
     ├── test_training.py
     ├── test_agent_tools.py
-    └── test_agent_graph.py
+    ├── test_agent_graph.py
+    ├── test_llm_safety.py
+    └── test_llm_live.py
 ```
 
 ## Dataset Schema
@@ -168,6 +172,21 @@ A fully deterministic LangGraph workflow investigates each failed payment using 
 - **Recommendation rules (heuristic, not tuned, not the policy engine):** RETRY when the failure reason is auto-retryable and probability ≥ 0.5; IGNORE when probability < 0.2; REVIEW otherwise or when evidence is incomplete. Every recommendation carries `policy_check_required=True`.
 - **Usage:** `python scripts/run_investigation.py --transaction-id TXN-0016861` or `--split test --limit 50 --output investigations.jsonl`.
 
+## LLM Evidence Narration (Phase 4)
+
+An **optional, advisory** LLM step explains the deterministic investigation. The workflow becomes `load_case → gather_evidence → analyze → llm_reason → validate_llm_output → recommend`; the deterministic recommendation is computed exactly as in Phase 3 and remains the **only** authoritative recommendation.
+
+**Boundary:** the LLM narrates evidence; it never decides. It cannot execute payments, trigger retries, modify transactions, authorize refunds or any financial action, call write-capable tools, override financial policy, or change the XGBoost probability. Its entire influence is one advisory, typed object (`LLMReview`, `advisory_only=True`) attached to the result.
+
+- **What the LLM can see:** a sanitized `LLMEvidenceBundle` serialized from validated Pydantic objects — transaction identifier, the XGBoost recovery probability, typed point-in-time evidence (label-free), deterministic findings, risk flags, the deterministic recommendation, and the allowed action vocabulary `RETRY / REVIEW / IGNORE`.
+- **What the LLM cannot see:** `recovery_outcome`, future attempts/failures, post-prediction recovery information, hidden labels, train/validation/test split information, raw DataFrames, filesystem paths, model internals, or any repository/tool access. The bundle is a field-by-field allowlist projection — nothing else can leak in.
+- **Structured output:** `InvestigationNarrative` (summary, key findings with `evidence_references`, uncertainty, prediction interpretation, advisory `recommended_action`, confidence). Malformed JSON or out-of-vocabulary actions are rejected; the investigation falls back to pure Phase 3 behavior with a note in `errors`.
+- **Grounding (mechanical checks with a documented limit):** hard factual claims are mechanically validated — evidence references must exist, payment identifiers must be supplied, cited probabilities must match the prediction, and vocabulary-member facts (failure reasons, payment methods, segments, outcomes) must not contradict the supplied evidence. Interpretive/reasoning statements must carry evidence references, but their semantic correctness **cannot be fully verified mechanically** — not all semantic hallucinations are detectable, and every validation payload reports this scope (`grounding_scope`).
+- **Disagreement handling:** if the LLM's `recommended_action` differs from the deterministic one, the disagreement is recorded in `LLMReview`, the narrative is marked advisory, and the deterministic recommendation is preserved untouched.
+- **Fallback:** no configuration, no API key, unreachable endpoint, timeout, or malformed output → `llm_review=None`, deterministic findings and recommendation preserved, reason recorded in `errors`. The no-LLM path is verified equivalent to the Phase 3 graph.
+- **Configuration (provider-neutral, zero new dependencies):** any OpenAI-compatible endpoint via `LLM_BASE_URL`, `LLM_MODEL`, optional `LLM_API_KEY`, `LLM_TIMEOUT_S` (see `.env.example`). Local-first recommendation: Ollama (`http://localhost:11434/v1`, e.g. `llama3.1:8b-instruct`) or LM Studio/llama.cpp; cloud providers work by pointing `LLM_BASE_URL` at them. Leave unset to run fully deterministically without an LLM. API keys are never logged.
+- **Usage:** default auto (`python scripts/run_investigation.py ...` uses env config when present); `--no-llm` forces the deterministic path. Unit tests use a scripted fake LLM; a live-model smoke test exists but is skipped unless `LLM_BASE_URL`/`LLM_MODEL` are set.
+
 ## Project Status
 
 RevenueGuard is being developed **incrementally**. Current progress:
@@ -177,6 +196,7 @@ RevenueGuard is being developed **incrementally**. Current progress:
 - [x] XGBoost recovery prediction baseline (Phase 2)
 - [x] LangGraph investigation agent, deterministic (Phase 3)
 - [x] Payment / customer investigation tools, deterministic (Phase 3)
+- [x] LLM evidence narration, advisory and optional (Phase 4)
 - [ ] Financial policy / guardrails
 - [ ] Simulated recovery and business metrics
 - [ ] LangSmith tracing and evaluation

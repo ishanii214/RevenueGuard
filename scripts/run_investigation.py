@@ -22,6 +22,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from agent.graph import investigate  # noqa: E402
+from agent.llm import DisabledLLM  # noqa: E402
 from agent.prediction import _get_features  # noqa: E402
 from agent.schemas import InvestigationInput  # noqa: E402
 
@@ -42,11 +43,22 @@ def main(argv=None):
     parser.add_argument("--data-dir", default="data")
     parser.add_argument("--model-path", default="models/baseline/model.json")
     parser.add_argument("--output", default=None, help="write JSON Lines to this path instead of stdout")
+    parser.add_argument(
+        "--llm",
+        dest="llm_mode",
+        action="store_const",
+        const="auto",
+        default="auto",
+        help="use the LLM configured via LLM_BASE_URL/LLM_MODEL env vars (default; disabled when unset)",
+    )
+    parser.add_argument("--no-llm", dest="llm_mode", action="store_const", const="off", help="disable LLM narration")
     args = parser.parse_args(argv)
 
     transaction_ids = _select_transaction_ids(args)
     if not transaction_ids:
         parser.error("no transactions selected")
+
+    llm_client = DisabledLLM() if args.llm_mode == "off" else None
 
     lines = []
     action_counts = {"RETRY": 0, "REVIEW": 0, "IGNORE": 0}
@@ -56,7 +68,8 @@ def main(argv=None):
                 transaction_id=transaction_id,
                 data_dir=args.data_dir,
                 model_path=args.model_path,
-            )
+            ),
+            llm_client=llm_client,
         )
         action_counts[result.recommendation.action] += 1
         lines.append(result.model_dump_json(indent=None))
