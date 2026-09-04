@@ -1,0 +1,4 @@
+# RevenueGuard — Python dependencies
+#
+# No dependencies are pinned yet. Dependencies are added only when a
+# development phase actually requires them (see README — Project Status).
