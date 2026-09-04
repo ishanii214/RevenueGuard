@@ -72,7 +72,8 @@ RevenueGuard/
 ├── scripts/
 │   ├── generate_data.py
 │   ├── features.py
-│   └── train_baseline.py
+│   ├── train_baseline.py
+│   └── run_investigation.py
 ├── models/
 │   └── baseline/
 │       ├── model.json
@@ -81,15 +82,20 @@ RevenueGuard/
 │       └── predictions_test.csv
 ├── agent/
 │   ├── __init__.py
-│   ├── graph.py
+│   ├── schemas.py
+│   ├── data_repository.py
+│   ├── prediction.py
 │   ├── state.py
 │   ├── tools.py
+│   ├── graph.py
 │   └── prompts.py
 └── tests/
     ├── test_data_quality.py
     ├── test_determinism.py
     ├── test_features.py
-    └── test_training.py
+    ├── test_training.py
+    ├── test_agent_tools.py
+    └── test_agent_graph.py
 ```
 
 ## Dataset Schema
@@ -150,6 +156,18 @@ Business evaluation on the test split (synthetic assumption: 2.00 cost per inter
 
 These are honest first-baseline numbers on synthetic data; improving discrimination is future work, not a claim of production readiness.
 
+## Investigation Agent (Phase 3)
+
+A fully deterministic LangGraph workflow investigates each failed payment using the Phase 2 XGBoost prediction and structured evidence from deterministic tools, then emits a typed investigation result with a **RETRY / REVIEW / IGNORE recommendation**.
+
+**Boundary:** Phase 3 recommendations are investigative recommendations, not financially authorized decisions. The agent must never execute or authorize a financial action. The later deterministic policy/guardrail layer controls whether any action is permitted.
+
+- **Workflow:** `START → load_case → gather_evidence → analyze → recommend → END`. Nodes are pure functions; no LLM is used in this phase. `agent/prompts.py` is reserved for LLM-backed narration in a later phase — schemas, tools, and graph state are designed so an LLM node can be added without redesign.
+- **Investigation tools (deterministic, point-in-time):** transaction details (label-free), customer profile, initial payment attempt (attempt 1 only), initial failure details, customer transaction history as of the prediction point, recovery history (known recoveries only), and the recovery prediction.
+- **Temporal availability rule:** a prior transaction's outcome contributes only if the outcome event (first failure / first success) happened before the case prediction point; a payment recovered after that point is reported as `failed_pending`.
+- **Recommendation rules (heuristic, not tuned, not the policy engine):** RETRY when the failure reason is auto-retryable and probability ≥ 0.5; IGNORE when probability < 0.2; REVIEW otherwise or when evidence is incomplete. Every recommendation carries `policy_check_required=True`.
+- **Usage:** `python scripts/run_investigation.py --transaction-id TXN-0016861` or `--split test --limit 50 --output investigations.jsonl`.
+
 ## Project Status
 
 RevenueGuard is being developed **incrementally**. Current progress:
@@ -157,8 +175,8 @@ RevenueGuard is being developed **incrementally**. Current progress:
 - [x] Project foundation and architecture documentation (Phase 0)
 - [x] Synthetic failed-payment dataset (Phase 1)
 - [x] XGBoost recovery prediction baseline (Phase 2)
-- [ ] LangGraph investigation agent
-- [ ] Payment / customer investigation tools
+- [x] LangGraph investigation agent, deterministic (Phase 3)
+- [x] Payment / customer investigation tools, deterministic (Phase 3)
 - [ ] Financial policy / guardrails
 - [ ] Simulated recovery and business metrics
 - [ ] LangSmith tracing and evaluation
