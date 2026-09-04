@@ -14,7 +14,13 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 from agent.prediction import _get_features  # noqa: E402
 from agent.schemas import InvestigationResult  # noqa: E402
-from backend.app import CaseDetail, CaseSummary, InvestigationResponse, create_app  # noqa: E402
+from backend.app import (  # noqa: E402
+    CaseDetail,
+    CaseSummary,
+    InvestigationResponse,
+    MetricsSummaryResponse,
+    create_app,
+)
 from backend.service import RevenueGuardService  # noqa: E402
 
 UNREACHABLE_DB = "postgresql://revenueguard:revenueguard@localhost:1/revenueguard"
@@ -95,6 +101,7 @@ class RouteTableTests(unittest.TestCase):
                 "/cases": {"GET"},
                 "/cases/{transaction_id}": {"GET"},
                 "/cases/{transaction_id}/investigation": {"GET", "POST"},
+                "/metrics/summary": {"GET"},
             },
         )
 
@@ -145,6 +152,75 @@ class ApiBehaviorWithoutDatabaseTests(unittest.TestCase):
     def test_unknown_case_returns_404(self):
         response = self.client.post("/cases/TXN-9999999/investigation", json={})
         self.assertEqual(response.status_code, 404)
+
+    def test_metrics_summary_503_without_database(self):
+        app = create_app(RevenueGuardService(database_url=UNREACHABLE_DB))
+        response = TestClient(app).get("/metrics/summary")
+        self.assertEqual(response.status_code, 503)
+
+    def test_metrics_response_model_excludes_recovery_outcome(self):
+        self.assertFalse(
+            _schema_mentions_key(MetricsSummaryResponse, "recovery_outcome"),
+            "MetricsSummaryResponse must not expose recovery_outcome",
+        )
+        fields = set(MetricsSummaryResponse.model_fields)
+        self.assertEqual(
+            fields,
+            {
+                "failed_transactions",
+                "investigated_cases",
+                "recommendations",
+                "final_actions",
+                "policy_decisions",
+                "execution_authorized_count",
+            },
+        )
+
+
+class CorsTests(unittest.TestCase):
+    def _client(self, origins=None):
+        import os
+
+        if origins is None:
+            environ = {}
+        else:
+            environ = {"REVENUEGUARD_CORS_ORIGINS": origins}
+        previous = os.environ.pop("REVENUEGUARD_CORS_ORIGINS", None)
+        os.environ.update(environ)
+        try:
+            app = create_app(RevenueGuardService(database_url=None))
+        finally:
+            if previous is None:
+                os.environ.pop("REVENUEGUARD_CORS_ORIGINS", None)
+            else:
+                os.environ["REVENUEGUARD_CORS_ORIGINS"] = previous
+        return TestClient(app)
+
+    def test_preflight_allowed_for_default_local_origin(self):
+        client = self._client()
+        response = client.options(
+            "/cases",
+            headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "GET"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "http://localhost:5173")
+
+    def test_preflight_rejected_for_unknown_origin(self):
+        client = self._client()
+        response = client.options(
+            "/cases",
+            headers={"Origin": "http://evil.example", "Access-Control-Request-Method": "GET"},
+        )
+        self.assertNotIn("access-control-allow-origin", response.headers)
+
+    def test_configurable_origins_from_environment(self):
+        client = self._client(origins="https://dashboard.example,http://localhost:5173")
+        response = client.options(
+            "/cases",
+            headers={"Origin": "https://dashboard.example", "Access-Control-Request-Method": "GET"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["access-control-allow-origin"], "https://dashboard.example")
 
 
 class TimestampSeparationTests(unittest.TestCase):

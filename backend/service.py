@@ -173,3 +173,8 @@ class RevenueGuardService:
             "prediction_time": row["prediction_time"],
             "investigated_at": row["investigated_at"],
         }
+
+    def metrics_summary(self) -> dict:
+        """Real persisted aggregates only; no derived or mocked values."""
+        with self._connect() as conn:
+            return db.metrics_summary(conn)

@@ -269,6 +269,41 @@ def fetch_result_snapshot(conn, transaction_id: str) -> dict | None:
     return dict(zip(keys, row))
 
 
+def metrics_summary(conn) -> dict:
+    """Real, persisted aggregates only (Phase 7 decision B).
+
+    ``failed_transactions`` follows the actual schema semantics:
+    transactions.status == 'failed' (status ∈ {completed, failed}, see the
+    Phase 1 dataset schema). All other counts aggregate the persisted
+    investigation_results snapshots.
+    """
+    failed = conn.execute("SELECT count(*) FROM transactions WHERE status = 'failed'").fetchone()[0]
+    investigated = conn.execute("SELECT count(*) FROM investigation_results").fetchone()[0]
+    recommendations = {
+        str(row[0]): int(row[1])
+        for row in conn.execute("SELECT recommendation, count(*) FROM investigation_results GROUP BY recommendation")
+    }
+    final_actions = {
+        str(row[0]): int(row[1])
+        for row in conn.execute("SELECT final_action, count(*) FROM investigation_results GROUP BY final_action")
+    }
+    policy_decisions = {
+        str(row[0]): int(row[1])
+        for row in conn.execute("SELECT policy_decision, count(*) FROM investigation_results GROUP BY policy_decision")
+    }
+    authorized = conn.execute(
+        "SELECT count(*) FROM investigation_results WHERE execution_authorized"
+    ).fetchone()[0]
+    return {
+        "failed_transactions": int(failed),
+        "investigated_cases": int(investigated),
+        "recommendations": recommendations,
+        "final_actions": final_actions,
+        "policy_decisions": policy_decisions,
+        "execution_authorized_count": int(authorized),
+    }
+
+
 def seed_from_csv(conn, data_dir: str = "data") -> dict:
     """Deterministically seed the database from the committed CSVs.
 

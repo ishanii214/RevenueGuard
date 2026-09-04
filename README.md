@@ -98,6 +98,17 @@ RevenueGuard/
 │   ├── repository.py
 │   ├── service.py
 │   └── app.py
+├── frontend/
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── index.html
+│   └── src/
+│       ├── api/ (types.ts, client.ts, ApiError.ts)
+│       ├── components/ (pipeline, policy, evidence, badges, table)
+│       ├── pages/ (CaseListPage, CaseDetailPage, MetricsPage)
+│       ├── hooks/ and lib/
+│       └── styles/global.css
 └── tests/
     ├── test_data_quality.py
     ├── test_determinism.py
@@ -209,6 +220,16 @@ RevenueGuard now persists cases and investigation snapshots to **PostgreSQL** an
 - **Safety:** case payloads are allowlisted projections — `recovery_outcome` is never served by the API; the LLM remains advisory-only; policy remains deterministic, authoritative, and fail-closed; `execution_authorized` semantics are unchanged; no payment execution exists.
 - **Tests:** the PostgreSQL integration suite is gated on `REVENUEGUARD_TEST_DATABASE_URL` (point it at a disposable database); the un-gated suite still covers response-model allowlists, route surface, validation, service boundaries, and safety invariants.
 
+## Analyst Dashboard (Phase 7)
+
+A **React + TypeScript** dashboard (Vite SPA in `frontend/`) demonstrates the full workflow: failed payments → XGBoost recovery probability (labeled as an estimate) → investigation evidence → deterministic recommendation → financial policy decision → RETRY/REVIEW/IGNORE → policy authorization. The backend is unchanged except two approved additions: configurable CORS (`REVENUEGUARD_CORS_ORIGINS`, default `http://localhost:5173`) and `GET /metrics/summary` serving only real persisted aggregates (counts by recommendation, final action, policy decision, authorized retries, and failed-transaction count per the `status = 'failed'` schema semantics).
+
+- **Run the backend:** `uvicorn backend.app:app --reload` (seed first: `python scripts/seed_database.py`).
+- **Run the dashboard:** `cd frontend && npm install && npm run dev` → http://localhost:5173. The dev server proxies `/api` to `VITE_PROXY_TARGET` (default `http://localhost:8000`); alternatively set `VITE_API_BASE_URL` to call the API directly.
+- **Pages:** *Cases* (bounded server-paginated failed-payment list), *Case detail* (pipeline view with "Run investigation" — the only mutating action — evidence cards, policy decision incl. guardrail-override banner when RETRY is denied to REVIEW, advisory LLM narration with disagreement notice), *Metrics* (real aggregates from `/metrics/summary`; explicit empty state when the database is unavailable).
+- **Frontend types** mirror the actual Pydantic response models field-for-field; `recovery_outcome` is structurally absent and `model_path` is never rendered. The UI derives no authorization itself: `execution_authorized` is displayed only from the backend policy result, and no payment-execution affordance exists anywhere.
+- **Frontend checks:** `npm run typecheck` (strict TS), `npm test` (vitest + testing-library: client behavior, policy/guardrail rendering, badges, evidence, list states), `npm run build` (production bundle).
+
 ## Project Status
 
 RevenueGuard is being developed **incrementally**. Current progress:
@@ -224,7 +245,7 @@ RevenueGuard is being developed **incrementally**. Current progress:
 - [ ] LangSmith tracing and evaluation
 - [x] PostgreSQL persistence (Phase 6)
 - [x] FastAPI backend (Phase 6)
-- [ ] React + TypeScript analyst dashboard
+- [x] React + TypeScript analyst dashboard (Phase 7)
 - [ ] MCP tool interface
 
 All unchecked components are **planned and not yet implemented**. The application components built so far (dataset, prediction, investigation, advisory narration, policy, persistence, API) are complete tooling and backend services; no financial execution capability exists.

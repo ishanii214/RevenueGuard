@@ -233,6 +233,36 @@ class PostgresIntegrationTests(unittest.TestCase):
             else:
                 self.assertFalse(policy.execution_authorized)
 
+    def test_metrics_summary_uses_real_persisted_data(self):
+        # Investigate a known number of cases, then compare the endpoint
+        # aggregates against the persisted rows (no mocked values).
+        for transaction_id in self.case_ids[:5]:
+            self._db_mode_result(transaction_id)
+        response = self.app.get("/metrics/summary")
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertNotIn("recovery_outcome", response.text.lower())
+        with db.connect(self.db_url) as conn:
+            expected_failed = conn.execute(
+                "SELECT count(*) FROM transactions WHERE status = 'failed'"
+            ).fetchone()[0]
+            expected_investigated = conn.execute(
+                "SELECT count(*) FROM investigation_results"
+            ).fetchone()[0]
+            expected_authorized = conn.execute(
+                "SELECT count(*) FROM investigation_results WHERE execution_authorized"
+            ).fetchone()[0]
+        self.assertEqual(body["failed_transactions"], expected_failed)
+        self.assertGreaterEqual(body["investigated_cases"], 5)
+        self.assertLessEqual(body["investigated_cases"], expected_investigated)
+        self.assertEqual(
+            sum(body["recommendations"].values()), body["investigated_cases"]
+        )
+        self.assertEqual(
+            sum(body["policy_decisions"].values()), body["investigated_cases"]
+        )
+        self.assertEqual(body["execution_authorized_count"], expected_authorized)
+
 
 if __name__ == "__main__":
     unittest.main()
