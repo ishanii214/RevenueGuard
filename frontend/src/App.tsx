@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { BrandMark } from "./components/BrandMark";
 import { CaseListPage } from "./pages/CaseListPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { useHealth } from "./hooks/useCases";
@@ -21,9 +22,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="topbar__brand">
-          <span className="topbar__mark" aria-hidden="true">
-            RG
-          </span>
+          <BrandMark size={32} />
           <div>
             <h1>RevenueGuard</h1>
             <p className="topbar__subtitle">Revenue recovery operations console</p>

@@ -72,19 +72,17 @@ h1, h2, h3, h4 {
   gap: 0.7rem;
 }
 
-.topbar__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.1rem;
-  height: 2.1rem;
-  border-radius: 10px;
-  background: var(--accent-soft);
-  border: 1px solid var(--border-strong);
+.brand-mark {
+  display: block;
+  flex-shrink: 0;
+}
+
+.brand-mark__ring {
+  color: var(--muted);
+}
+
+.brand-mark__arrow {
   color: var(--accent-strong);
-  font-weight: 800;
-  font-size: 0.8rem;
-  letter-spacing: 0.06em;
 }
 
 .topbar h1 {
