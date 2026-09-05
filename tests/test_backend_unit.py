@@ -1,10 +1,12 @@
 """Phase 6 backend unit tests — meaningful coverage without PostgreSQL."""
 
 import json
+import os
 import sys
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
@@ -12,6 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+import backend.db as db  # noqa: E402
 from agent.prediction import _get_features  # noqa: E402
 from agent.schemas import InvestigationResult  # noqa: E402
 from backend.app import (  # noqa: E402
@@ -221,6 +224,44 @@ class CorsTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.headers["access-control-allow-origin"], "https://dashboard.example")
+
+
+class ConnectUrlResolutionTests(unittest.TestCase):
+    """Regression tests for db.connect() URL resolution.
+
+    Regression context: the connect() parameter was originally named
+    ``database_url``, shadowing the module-level database_url() helper and
+    raising ``TypeError: 'str' object is not callable`` at call time.
+    """
+
+    def _capture_psycopg_connect(self):
+        captured = {}
+
+        def fake_psycopg_connect(url, *args, **kwargs):
+            captured["url"] = url
+            return mock.MagicMock()
+
+        return captured, fake_psycopg_connect
+
+    def test_connect_passes_explicit_url_to_psycopg(self):
+        captured, fake = self._capture_psycopg_connect()
+        url = "postgresql://user:pw@localhost:5432/revenueguard"
+        with mock.patch.object(db.psycopg, "connect", side_effect=fake):
+            db.connect(url)
+        self.assertEqual(captured["url"], url)
+
+    def test_connect_resolves_url_from_environment(self):
+        captured, fake = self._capture_psycopg_connect()
+        env_url = "postgresql://env-user@localhost:5432/env-db"
+        with mock.patch.dict(os.environ, {"DATABASE_URL": env_url}):
+            with mock.patch.object(db.psycopg, "connect", side_effect=fake):
+                db.connect()
+        self.assertEqual(captured["url"], env_url)
+
+    def test_connect_without_configuration_raises(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(RuntimeError):
+                db.connect()
 
 
 class TimestampSeparationTests(unittest.TestCase):

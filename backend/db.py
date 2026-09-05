@@ -88,8 +88,8 @@ def database_url(override: str | None = None) -> str:
     return url
 
 
-def connect(database_url: str | None = None) -> psycopg.Connection:
-    return psycopg.connect(database_url(database_url))
+def connect(url: str | None = None) -> psycopg.Connection:
+    return psycopg.connect(database_url(url))
 
 
 def apply_schema(conn: psycopg.Connection) -> None:
