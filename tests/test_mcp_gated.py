@@ -105,41 +105,70 @@ class McpDatabaseToolTests(unittest.TestCase):
 
 
 class _Fixture:
+    """Single-owner-task stdio fixture (same pattern as test_mcp_server.py):
+    the SDK's anyio streams must be entered and exited inside the SAME task,
+    so one task owns the session lifecycle and serves a request queue."""
+
     def __init__(self, database_url: str):
-        self.loop = None
-        self.session = None
-        self._stack = None
         self.database_url = database_url
+        self.loop = None
+        self._task = None
+        self._queue = None
+        self._ready = None
+        self._stopped = None
+        self._session = None
 
     def start(self):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self._start())
+        self._queue = asyncio.Queue()
+        self._ready = asyncio.Event()
+        self._stopped = asyncio.Event()
+        self._task = self.loop.create_task(self._serve())
+        self.loop.run_until_complete(self._ready.wait())
 
-    async def _start(self):
-        self._stack = AsyncExitStack()
-        env = dict(os.environ)
-        env["DATABASE_URL"] = self.database_url
-        env["PYTHONIOENCODING"] = "utf-8"
-        params = StdioServerParameters(
-            command=sys.executable, args=[str(SERVER_PATH)], env=env
-        )
-        read_stream, write_stream = await self._stack.enter_async_context(stdio_client(params))
-        self.session = await self._stack.enter_async_context(
-            ClientSession(read_stream, write_stream, read_timeout_seconds=300.0)
-        )
-        await self.session.initialize()
+    async def _serve(self):
+        try:
+            async with AsyncExitStack() as stack:
+                env = dict(os.environ)
+                env["DATABASE_URL"] = self.database_url
+                env["PYTHONIOENCODING"] = "utf-8"
+                params = StdioServerParameters(
+                    command=sys.executable, args=[str(SERVER_PATH)], env=env
+                )
+                read_stream, write_stream = await stack.enter_async_context(stdio_client(params))
+                session = await stack.enter_async_context(
+                    ClientSession(read_stream, write_stream, read_timeout_seconds=300.0)
+                )
+                await asyncio.wait_for(session.initialize(), timeout=120)
+                self._session = session
+                self._ready.set()
+                while True:
+                    fn, args, future = await self._queue.get()
+                    if fn is None:
+                        break
+                    try:
+                        future.set_result(await fn(*args))
+                    except Exception as exc:  # noqa: BLE001 — surfaced to the caller
+                        future.set_exception(exc)
+        finally:
+            self._stopped.set()
 
     def stop(self):
-        try:
-            self.loop.run_until_complete(self._stack.aclose())
-        finally:
-            self.loop.close()
-            asyncio.set_event_loop(None)
+        async def _signal_stop():
+            await self._queue.put((None, None, None))
+            await self._stopped.wait()
+
+        self.loop.run_until_complete(_signal_stop())
+        self.loop.run_until_complete(self._task)
+        self.loop.close()
+        asyncio.set_event_loop(None)
 
     def call_tool(self, name, arguments=None):
         async def _run():
-            return await self.session.call_tool(name, arguments or {})
+            future = self.loop.create_future()
+            await self._queue.put((self._session.call_tool, (name, arguments or {}), future))
+            return await future
 
         return self.loop.run_until_complete(_run())
 

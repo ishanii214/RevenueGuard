@@ -307,9 +307,11 @@ def metrics_summary(conn) -> dict:
 def seed_from_csv(conn, data_dir: str = "data") -> dict:
     """Deterministically seed the database from the committed CSVs.
 
-    Applies the schema, truncates in FK-safe order, inserts rows in ID order
-    (identical to generation order), and verifies row counts against the
-    source frames. Re-running produces the same database contents.
+    Applies the schema, truncates in FK-safe order (children first), inserts
+    rows in parent-first FK-safe order (customers -> transactions ->
+    attempts -> failures; rows themselves in ID order, identical to
+    generation order), and verifies row counts against the source frames.
+    Re-running produces the same database contents.
     """
     import sys
 
@@ -328,7 +330,7 @@ def seed_from_csv(conn, data_dir: str = "data") -> dict:
     )
     for name, _source, frame in tables:
         conn.execute(f"TRUNCATE {name} CASCADE")
-    for name, _source, frame in tables:
+    for name, _source, frame in reversed(tables):
         columns = TABLE_COLUMNS[name]
         placeholders = ", ".join(["%s"] * len(columns))
         rows = list(frame.itertuples(index=False, name=None))

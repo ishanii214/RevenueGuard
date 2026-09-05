@@ -120,7 +120,7 @@ class PostgresIntegrationTests(unittest.TestCase):
                 self.repo_db.get_initial_failure(transaction_id),
                 self.repo_csv.get_initial_failure(transaction_id),
             )
-            customer_id = attempt_db.customer_id
+            customer_id = self.repo_csv.get_transaction(transaction_id).customer_id
             prediction_time = attempt_db.attempted_at
             self.assertEqual(
                 self.repo_db.get_customer_history(customer_id, prediction_time, exclude_transaction_id=transaction_id),
@@ -145,7 +145,7 @@ class PostgresIntegrationTests(unittest.TestCase):
         self.assertTrue(multi)
         for transaction_id in multi:
             result = self._db_mode_result(transaction_id)["result"]
-            policy_request_json = json.dumps(result.policy_evaluation.model_dump())
+            policy_request_json = result.policy_evaluation.model_dump_json()
             future = self.attempts.loc[
                 (self.attempts["transaction_id"] == transaction_id)
                 & (self.attempts["attempt_number"] != "1"),
@@ -157,16 +157,32 @@ class PostgresIntegrationTests(unittest.TestCase):
 
     def test_bounded_loading_single_load_across_investigations(self):
         db.reset_stats()
+        db._FRAME_CACHE.invalidate()  # measure from a cold cache
         for transaction_id in self.case_ids[:5]:
             self._db_mode_result(transaction_id)
         self.assertEqual(db.STATS["frame_loads"], 1, "frames must load once, not per investigation")
         self.assertGreaterEqual(db.STATS["fingerprint_checks"], 5)
-        # A reseed changes the fingerprint and forces exactly one reload.
+        # An identical-content reseed produces the same fingerprint, so the
+        # cache stays valid by design (same database state -> same frames).
         with db.connect(self.db_url) as conn:
             db.seed_from_csv(conn, "data")
-        for transaction_id in self.case_ids[:5]:
-            self._db_mode_result(transaction_id)
-        self.assertEqual(db.STATS["frame_loads"], 2)
+        self._db_mode_result(self.case_ids[0])
+        self.assertEqual(db.STATS["frame_loads"], 1)
+        # A real data change must invalidate the cache and force one reload.
+        with db.connect(self.db_url) as conn:
+            conn.execute(
+                "INSERT INTO customers (customer_id, signup_date, customer_segment, "
+                "country, preferred_payment_method) "
+                "VALUES ('CUST-999999', '2020-01-01', 'retail', 'US', 'card')"
+            )
+            conn.commit()
+        try:
+            self._db_mode_result(self.case_ids[0])
+            self.assertEqual(db.STATS["frame_loads"], 2)
+        finally:
+            with db.connect(self.db_url) as conn:
+                conn.execute("DELETE FROM customers WHERE customer_id = 'CUST-999999'")
+                conn.commit()
 
     def test_timestamp_separation(self):
         transaction_id = self.case_ids[0]
