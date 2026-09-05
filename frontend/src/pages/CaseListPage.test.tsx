@@ -32,40 +32,43 @@ function renderPage() {
   );
 }
 
+/**
+ * The workspace issues several read-only requests per render (case list plus
+ * one investigation lookup per row). A Response body can only be consumed
+ * once, so the mock must produce a FRESH Response for every call — the
+ * assertions below are unchanged.
+ */
+function mockFetchOnce(status: number, body: unknown) {
+  return vi.fn().mockImplementation(async () =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }),
+  );
+}
+
 describe("CaseListPage", () => {
   it("renders cases in a table with a link to the detail view", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(listResponse()), { status: 200, headers: { "Content-Type": "application/json" } }),
-    ));
+    vi.stubGlobal("fetch", mockFetchOnce(200, listResponse()));
     renderPage();
     expect(await screen.findByText("TXN-0000001")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "TXN-0000001" })).toHaveAttribute("href", "/cases/TXN-0000001");
   });
 
   it("shows the empty state when there are no cases", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(listResponse({ items: [], total: 0 })), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ));
+    vi.stubGlobal("fetch", mockFetchOnce(200, listResponse({ items: [], total: 0 })));
     renderPage();
     expect(await screen.findByText("No failed-payment cases available.")).toBeInTheDocument();
   });
 
   it("shows the backend-unavailable error state on 503", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ detail: "database unavailable" }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      }),
-    ));
+    vi.stubGlobal("fetch", mockFetchOnce(503, { detail: "database unavailable" }));
     renderPage();
     expect(await screen.findByText("Backend unavailable")).toBeInTheDocument();
   });
 
   it("sends bounded pagination parameters for page 2", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
+    const fetchMock = vi.fn().mockImplementation(async () =>
       new Response(JSON.stringify(listResponse({ total: 30 })), {
         status: 200,
         headers: { "Content-Type": "application/json" },

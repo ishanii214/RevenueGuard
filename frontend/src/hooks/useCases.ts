@@ -2,7 +2,7 @@ import { useAsync } from "./useAsync";
 import { api } from "../api/client";
 import type { CaseListResponse, CaseSummary, InvestigationResponse, MetricsSummaryResponse } from "../api/types";
 import { NotFoundError } from "../api/ApiError";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export const PAGE_SIZE = 25;
 
@@ -87,4 +87,46 @@ export function useInvestigationRunner(
 
 export function useMetrics() {
   return useAsync<MetricsSummaryResponse>(() => api.metricsSummary(), []);
+}
+
+/**
+ * Optional list enrichment: loads the persisted investigation (if any) for
+ * each case on the current page so rows can show probability, recommendation
+ * and policy status "when available". Read-only GETs; a 404 simply means the
+ * case has not been investigated. Any other failure degrades to no badges —
+ * it never blocks or fakes the case list itself.
+ */
+export function useCaseListInvestigations(
+  transactionIds: string[],
+  refreshKey: number,
+): Record<string, InvestigationResponse | null> {
+  const [map, setMap] = useState<Record<string, InvestigationResponse | null>>({});
+  const idsKey = transactionIds.join("|");
+
+  useEffect(() => {
+    const ids = idsKey ? idsKey.split("|") : [];
+    if (ids.length === 0) {
+      setMap({});
+      return;
+    }
+    let cancelled = false;
+    setMap({});
+    Promise.all(
+      ids.map((id) =>
+        api
+          .getInvestigation(id)
+          .then((investigation) => [id, investigation] as const)
+          .catch(() => [id, null] as const),
+      ),
+    ).then((entries) => {
+      if (!cancelled) {
+        setMap(Object.fromEntries(entries));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [idsKey, refreshKey]);
+
+  return map;
 }

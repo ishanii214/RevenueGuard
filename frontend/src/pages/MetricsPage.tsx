@@ -12,7 +12,12 @@ export function MetricsPage() {
   const { data, loading, error } = useMetrics();
   return (
     <section aria-labelledby="metrics-heading">
-      <h2 id="metrics-heading">Operations metrics</h2>
+      <div className="page-heading">
+        <div>
+          <h2 id="metrics-heading">Operations metrics</h2>
+          <p className="page-heading__hint">Persisted aggregates only — nothing derived or estimated.</p>
+        </div>
+      </div>
       <StatusMessage
         loading={loading}
         error={error}
@@ -23,16 +28,19 @@ export function MetricsPage() {
           <>
             <div className="metrics-grid">
               <div className="card metric-card">
+                <span className="metric-card__label">Failed transactions</span>
                 <span className="metric-card__value">{data.failed_transactions}</span>
-                <span className="metric-card__label">Failed transactions (status = failed)</span>
+                <span className="metric-card__label">status = failed</span>
               </div>
               <div className="card metric-card">
-                <span className="metric-card__value">{data.investigated_cases}</span>
                 <span className="metric-card__label">Investigated cases</span>
+                <span className="metric-card__value">{data.investigated_cases}</span>
+                <span className="metric-card__label">persisted investigation snapshots</span>
               </div>
               <div className="card metric-card">
-                <span className="metric-card__value">{data.execution_authorized_count}</span>
                 <span className="metric-card__label">Policy-authorized retries</span>
+                <span className="metric-card__value">{data.execution_authorized_count}</span>
+                <span className="metric-card__label">execution permitted by policy</span>
               </div>
             </div>
             <div className="metrics-grid">
@@ -41,7 +49,8 @@ export function MetricsPage() {
                 <ul className="metric-card__breakdown">
                   {ACTION_ORDER.map((action) => (
                     <li key={action}>
-                      {action}: {data.recommendations[action] ?? 0}
+                      <span>{action}</span>
+                      <span>{data.recommendations[action] ?? 0}</span>
                     </li>
                   ))}
                 </ul>
@@ -51,7 +60,8 @@ export function MetricsPage() {
                 <ul className="metric-card__breakdown">
                   {ACTION_ORDER.map((action) => (
                     <li key={action}>
-                      {action}: {data.final_actions[action] ?? 0}
+                      <span>{action}</span>
+                      <span>{data.final_actions[action] ?? 0}</span>
                     </li>
                   ))}
                 </ul>
@@ -61,7 +71,8 @@ export function MetricsPage() {
                 <ul className="metric-card__breakdown">
                   {DECISION_ORDER.map((decision) => (
                     <li key={decision}>
-                      {decision}: {data.policy_decisions[decision] ?? 0}
+                      <span>{decision}</span>
+                      <span>{data.policy_decisions[decision] ?? 0}</span>
                     </li>
                   ))}
                 </ul>
@@ -80,3 +91,4 @@ export function MetricsPage() {
     </section>
   );
 }
+
