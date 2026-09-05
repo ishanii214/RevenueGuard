@@ -292,5 +292,74 @@ class TimestampSeparationTests(unittest.TestCase):
         self.assertNotIn("investigated_at", self.result.model_dump())
 
 
+class InternalKeyExposureRegressionTests(unittest.TestCase):
+    """Regression: FastAPI investigation responses must never contain
+    ``model_path`` or ``recovery_outcome`` at ANY nesting depth.
+
+    Bug context: the FastAPI layer originally returned the raw
+    InvestigationResult, exposing ``prediction.model_path`` and the
+    ``recovery_prediction`` evidence payload's ``model_path``. The MCP layer
+    stripped them; the API did not. Responses are now recursively stripped at
+    the response-model serialization boundary.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.client = TestClient(create_app(RevenueGuardService(database_url=None)))
+        from agent.data_repository import get_repository
+
+        cls.failed_id = get_repository("data").failed_transaction_ids[0]
+
+    @staticmethod
+    def _contains_key(value, needle):
+        if isinstance(value, dict):
+            if needle in value:
+                return True
+            return any(InternalKeyExposureRegressionTests._contains_key(v, needle) for v in value.values())
+        if isinstance(value, list):
+            return any(InternalKeyExposureRegressionTests._contains_key(v, needle) for v in value)
+        return False
+
+    def test_post_investigation_response_has_no_internal_keys(self):
+        response = self.client.post(f"/cases/{self.failed_id}/investigation", json={})
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertFalse(self._contains_key(body, "model_path"))
+        self.assertFalse(self._contains_key(body, "recovery_outcome"))
+
+    def test_prediction_payload_content_survives_stripping(self):
+        response = self.client.post(f"/cases/{self.failed_id}/investigation", json={})
+        self.assertEqual(response.status_code, 200)
+        result = response.json()["result"]
+        self.assertIn("probability", result["prediction"])
+        self.assertIn("prediction_time", result["prediction"])
+        prediction_evidence = next(
+            e for e in result["evidence"] if e["source"] == "recovery_prediction"
+        )
+        self.assertIn("probability", prediction_evidence["payload"])
+        self.assertNotIn("model_path", prediction_evidence["payload"])
+
+    def test_recursive_strip_helper_removes_keys_at_all_depths(self):
+        from backend.app import _strip_internal_keys
+
+        dirty = {
+            "model_path": "models/baseline/model.json",
+            "nested": {
+                "recovery_outcome": "recovered",
+                "list": [{"model_path": "x", "keep": 1}, "scalar"],
+            },
+            "keep": {"probability": 0.42},
+        }
+        clean = _strip_internal_keys(dirty)
+        self.assertEqual(
+            clean,
+            {"nested": {"list": [{"keep": 1}, "scalar"]}, "keep": {"probability": 0.42}},
+        )
+        self.assertFalse(self._contains_key(clean, "model_path"))
+        self.assertFalse(self._contains_key(clean, "recovery_outcome"))
+
+
+if __name__ == "__main__":
+    unittest.main()
 if __name__ == "__main__":
     unittest.main()

@@ -15,7 +15,7 @@ from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 
 from agent.schemas import InvestigationResult
 
@@ -46,11 +46,40 @@ class CaseListResponse(BaseModel):
     offset: int
 
 
+INTERNAL_RESPONSE_KEYS = ("model_path", "recovery_outcome")
+
+
+def _strip_internal_keys(value):
+    """Recursively remove internal artifact/label keys from a serialized
+    response. ``model_path`` is an internal model artifact path and
+    ``recovery_outcome`` is a training label; neither may appear in any API
+    response at any nesting depth (defense in depth on top of the typed
+    schemas, which structurally exclude ``recovery_outcome``)."""
+    if isinstance(value, dict):
+        return {
+            key: _strip_internal_keys(item)
+            for key, item in value.items()
+            if key not in INTERNAL_RESPONSE_KEYS
+        }
+    if isinstance(value, list):
+        return [_strip_internal_keys(item) for item in value]
+    return value
+
+
 class InvestigationResponse(BaseModel):
     transaction_id: str
     prediction_time: datetime | None
     investigated_at: datetime
     result: InvestigationResult
+
+    @model_serializer(mode="wrap")
+    def _strip_internal_artifact_paths(self, handler):
+        """Public-safe serialization: never expose internal model artifact
+        paths (``model_path``) or recovery labels (``recovery_outcome``)
+        anywhere in the nested result — including ``prediction`` and the
+        ``recovery_prediction`` evidence payload. Mirrors the MCP-layer
+        projection so the API and MCP enforce the same exposure rules."""
+        return _strip_internal_keys(handler(self))
 
 
 class StartInvestigationRequest(BaseModel):
