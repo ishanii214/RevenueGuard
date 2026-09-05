@@ -17,7 +17,12 @@ pydantic==2.13.4
 # (OpenAI-compatible endpoints via the standard library; see agent/llm.py)
 
 # Phase 6: PostgreSQL persistence + FastAPI service layer
+# (fastapi/uvicorn raised to versions compatible with the mcp SDK's
+# starlette requirement in Phase 8)
 psycopg[binary]==3.2.3
-fastapi==0.111.0
-uvicorn==0.29.0
+fastapi==0.141.1
+uvicorn==0.52.4
 httpx==0.27.0
+
+# Phase 8: MCP integration (official SDK; stdio server over the service layer)
+mcp==2.1.1

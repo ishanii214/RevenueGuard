@@ -64,6 +64,7 @@ RevenueGuard/
 ├── .gitignore
 ├── .env.example
 ├── requirements.txt
+├── mcp_server.py
 ├── data/
 │   ├── customers.csv
 │   ├── transactions.csv
@@ -229,6 +230,23 @@ A **React + TypeScript** dashboard (Vite SPA in `frontend/`) demonstrates the fu
 - **Pages:** *Cases* (bounded server-paginated failed-payment list), *Case detail* (pipeline view with "Run investigation" — the only mutating action — evidence cards, policy decision incl. guardrail-override banner when RETRY is denied to REVIEW, advisory LLM narration with disagreement notice), *Metrics* (real aggregates from `/metrics/summary`; explicit empty state when the database is unavailable).
 - **Frontend types** mirror the actual Pydantic response models field-for-field; `recovery_outcome` is structurally absent and `model_path` is never rendered. The UI derives no authorization itself: `execution_authorized` is displayed only from the backend policy result, and no payment-execution affordance exists anywhere.
 - **Frontend checks:** `npm run typecheck` (strict TS), `npm test` (vitest + testing-library: client behavior, policy/guardrail rendering, badges, evidence, list states), `npm run build` (production bundle).
+
+## MCP Server (Phase 8)
+
+RevenueGuard exposes a minimal **Model Context Protocol (MCP)** server so MCP-compatible AI clients can answer revenue-recovery questions with real, policy-guarded data. MCP is an **interface** to the existing capabilities — it is not a second agent, a second policy engine, or an execution system. The server is a thin layer over the existing `RevenueGuardService`; it contains no SQL, no ML code, and no investigation logic.
+
+**Boundary:** MCP tools are read-only or investigation-triggering only. Results are investigative recommendations, **not payment execution** — RevenueGuard cannot execute, retry, or authorize any payment. `execution_authorized` is passed through verbatim from the deterministic policy layer; `recovery_outcome` and internal model paths are never exposed; tool errors are safe and generic.
+
+- **Tools (exactly five):**
+  - `list_failed_payment_cases(limit, offset)` — bounded, paginated case listing (read-only)
+  - `get_case(transaction_id)` — single allowlisted case projection (read-only)
+  - `get_investigation(transaction_id)` — existing investigation snapshot: prediction, evidence, recommendation, policy decision (read-only)
+  - `run_investigation(transaction_id, use_llm=false)` — runs the real pipeline (XGBoost → investigation → advisory LLM → policy) and returns the full result; triggers analysis only, never a payment
+  - `get_operations_metrics()` — real persisted aggregates (read-only)
+- **Start:** `python mcp_server.py` (stdio transport). With `DATABASE_URL` set, case-list/detail/metrics tools and DB-mode investigations work against PostgreSQL; without it, `run_investigation` works in CSV mode and the database-backed tools return a safe "database unavailable" error.
+- **Connect an MCP client:** register the server command in your MCP host, e.g. `{"mcpServers": {"revenueguard": {"command": "python", "args": ["mcp_server.py"]}}}`.
+- **Example legitimate queries:** "List recent failed payments." · "Investigate TXN-0016861 and summarize the prediction, evidence, recommendation, and policy decision." · "What are the current operations metrics?"
+- **Testing:** un-gated tests exercise the server end-to-end over real stdio (discovery, validation, delegation, policy preservation, exposure rules, safe errors, determinism); database-backed tool tests are gated on `REVENUEGUARD_TEST_DATABASE_URL` like the Phase 6 suite. The Phase 7 dashboard is unchanged and does not require MCP.
 
 ## Project Status
 
